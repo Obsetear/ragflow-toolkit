@@ -88,6 +88,16 @@ python tests/test_mock.py
 
 用一个 mock RAGFlow 服务器端到端验证上传、子目录、扩展名过滤、解析触发、断点续传，不需要真实 RAGFlow。
 
+## 商业支持
+
+需要 RAGFlow **私有化部署、批量导入、内网离线部署或远程排错**？
+
+- 远程排错 / 批量导入 / 单机部署 / ARM64·麒麟离线部署
+- 先诊断后收费，修不好不收费
+- 在 [Issues](https://github.com/Obsetear/ragflow-toolkit/issues) 留言说明环境与报错
+
+开源工具永久免费；商业支持按需。
+
 ## License
 
 MIT
