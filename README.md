@@ -80,6 +80,14 @@ python ragflow_toolkit.py health ...
 - RAGFlow **v0.27.x**（API 前缀 `/api/v1`）
 - 更老版本（`/v1`）需要改 `RFClient` 里的路径前缀
 
+## 测试
+
+```bash
+python tests/test_mock.py
+```
+
+用一个 mock RAGFlow 服务器端到端验证上传、子目录、扩展名过滤、解析触发、断点续传，不需要真实 RAGFlow。
+
 ## License
 
 MIT

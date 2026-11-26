@@ -28,6 +28,7 @@ import mimetypes
 import os
 import sqlite3
 import sys
+import threading
 import time
 import urllib.error
 import urllib.parse
@@ -36,7 +37,7 @@ import uuid
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
-STATE_DB = Path.home() / ".ragflow-toolkit" / "state.db"
+STATE_DB = Path(os.environ.get("RAGFLOW_TOOLKIT_STATE", str(Path.home() / ".ragflow-toolkit" / "state.db")))
 DEFAULT_TIMEOUT = 60
 RETRIES = 3
 
@@ -153,7 +154,8 @@ class RFClient:
 class StateDB:
     def __init__(self, path: Path = STATE_DB):
         path.parent.mkdir(parents=True, exist_ok=True)
-        self.db = sqlite3.connect(str(path))
+        self.db = sqlite3.connect(str(path), check_same_thread=False)
+        self.lock = threading.Lock()
         self.db.execute(
             """CREATE TABLE IF NOT EXISTS uploaded (
                 path TEXT PRIMARY KEY,
@@ -166,17 +168,20 @@ class StateDB:
         self.db.commit()
 
     def is_done(self, path: str) -> bool:
-        cur = self.db.execute("SELECT 1 FROM uploaded WHERE path=?", (path,))
-        return cur.fetchone() is not None
+        with self.lock:
+            cur = self.db.execute("SELECT 1 FROM uploaded WHERE path=?", (path,))
+            return cur.fetchone() is not None
 
     def record(self, path: str, dataset: str, doc_id: str | None, parsed: int = 0):
-        self.db.execute(
-            "INSERT OR REPLACE INTO uploaded(path,dataset,doc_id,parsed,ts) VALUES(?,?,?,?,?)",
-            (path, dataset, doc_id, parsed, time.time()),
-        )
+        with self.lock:
+            self.db.execute(
+                "INSERT OR REPLACE INTO uploaded(path,dataset,doc_id,parsed,ts) VALUES(?,?,?,?,?)",
+                (path, dataset, doc_id, parsed, time.time()),
+            )
 
     def mark_parsed(self, path: str):
-        self.db.execute("UPDATE uploaded SET parsed=1 WHERE path=?", (path,))
+        with self.lock:
+            self.db.execute("UPDATE uploaded SET parsed=1 WHERE path=?", (path,))
 
     def unparsed(self, dataset: str | None = None):
         q = "SELECT path,doc_id FROM uploaded WHERE parsed=0"
@@ -184,15 +189,23 @@ class StateDB:
         if dataset:
             q += " AND dataset=?"
             args = (dataset,)
-        return self.db.execute(q, args).fetchall()
+        with self.lock:
+            return self.db.execute(q, args).fetchall()
+
+    def dataset_of(self, path: str):
+        with self.lock:
+            row = self.db.execute("SELECT dataset FROM uploaded WHERE path=?", (path,)).fetchone()
+            return row[0] if row else None
 
     def stats(self):
-        total = self.db.execute("SELECT COUNT(*) FROM uploaded").fetchone()[0]
-        parsed = self.db.execute("SELECT COUNT(*) FROM uploaded WHERE parsed=1").fetchone()[0]
-        return total, parsed
+        with self.lock:
+            total = self.db.execute("SELECT COUNT(*) FROM uploaded").fetchone()[0]
+            parsed = self.db.execute("SELECT COUNT(*) FROM uploaded WHERE parsed=1").fetchone()[0]
+            return total, parsed
 
     def commit(self):
-        self.db.commit()
+        with self.lock:
+            self.db.commit()
 
 
 # --------------------------------------------------------------------------- #
@@ -209,17 +222,19 @@ def win_long(path: Path) -> str:
 
 
 def scan(source: Path, exts: set[str]):
+    """返回 (长路径基址, 文件列表)；基址带 \\?\ 前缀，后续 relative_to 必须用它"""
+    base = Path(win_long(source))
     files = []
-    for root, _dirs, names in os.walk(win_long(source)):
+    for root, _dirs, names in os.walk(str(base)):
         for n in names:
             if Path(n).suffix.lower() in exts:
                 files.append(Path(root) / n)
-    return files
+    return base, files
 
 
-def doc_name(source: Path, f: Path) -> str:
+def doc_name(base: Path, f: Path) -> str:
     """显示名 = 相对路径，/ 换成 __，超 250 字节截断加哈希"""
-    rel = f.relative_to(source).as_posix()
+    rel = f.relative_to(base).as_posix()
     s = rel.replace("/", "__")
     if len(s.encode("utf-8")) > 250:
         h = hashlib.md5(rel.encode()).hexdigest()[:8]
@@ -244,26 +259,28 @@ def cmd_upload(args):
             prefix, _, kb = line.partition("|")
             mapping.append((prefix.strip(), kb.strip()))
 
+    datasets = {d["name"]: d["id"] for d in client.list_datasets().get("data", [])}
+    if args.dataset and args.dataset not in datasets:
+        r = client.create_dataset(args.dataset)
+        data = r.get("data")
+        ds_id = data["id"] if isinstance(data, dict) else (data or [{}])[0].get("id")
+        datasets[args.dataset] = ds_id
+        print(f"[+] 创建知识库 {args.dataset} -> {ds_id}")
+
+    exts = {e if e.startswith(".") else "." + e for e in args.ext.split(",")}
+    base, files = scan(Path(args.source), exts)
+    print(f"[i] 扫描到 {len(files)} 个文件（扩展名 {sorted(exts)}）")
+    if args.limit:
+        files = files[: args.limit]
+
     def pick_dataset(f: Path) -> str:
         if not mapping:
             return args.dataset
-        rel = f.relative_to(args.source).as_posix()
+        rel = f.relative_to(base).as_posix()
         for prefix, kb in mapping:
             if rel.startswith(prefix):
                 return kb
         return args.dataset
-
-    datasets = {d["name"]: d["id"] for d in client.list_datasets().get("data", [])}
-    if args.dataset and args.dataset not in datasets:
-        r = client.create_dataset(args.dataset)
-        datasets[args.dataset] = r["data"]["id"]
-        print(f"[+] 创建知识库 {args.dataset} -> {datasets[args.dataset]}")
-
-    exts = {e if e.startswith(".") else "." + e for e in args.ext.split(",")}
-    files = scan(Path(args.source), exts)
-    print(f"[i] 扫描到 {len(files)} 个文件（扩展名 {sorted(exts)}）")
-    if args.limit:
-        files = files[: args.limit]
 
     def work(f: Path):
         key = str(f)
@@ -273,7 +290,7 @@ def cmd_upload(args):
         if kb not in datasets:
             raise RuntimeError(f"知识库不存在：{kb}")
         content = f.read_bytes()
-        r = client.upload_document(datasets[kb], doc_name(Path(args.source), f), content)
+        r = client.upload_document(datasets[kb], doc_name(base, f), content)
         doc_id = (r.get("data") or [{}])[0].get("id") if isinstance(r.get("data"), list) else r.get("data", {}).get("id")
         state.record(key, kb, doc_id, parsed=0)
         return ("ok", key)
@@ -300,7 +317,7 @@ def cmd_upload(args):
         by_ds: dict[str, list] = {}
         for path, doc_id in pending:
             if doc_id:
-                ds = state.db.execute("SELECT dataset FROM uploaded WHERE path=?", (path,)).fetchone()[0]
+                ds = state.dataset_of(path)
                 by_ds.setdefault(ds, []).append(doc_id)
         for ds, ids in by_ds.items():
             for i in range(0, len(ids), 100):
