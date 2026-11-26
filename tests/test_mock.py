@@ -15,6 +15,13 @@ from pathlib import Path
 # 把包目录加进 path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
+# Windows 控制台默认 cp1252，print 中文会 UnicodeEncodeError
+for _stream in (sys.stdout, sys.stderr):
+    try:
+        _stream.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:  # noqa: BLE001
+        pass
+
 RECEIVED = []          # (dataset_id, filename)
 PARSED = []            # dataset_id
 
