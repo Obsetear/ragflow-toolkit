@@ -1,6 +1,6 @@
 [project]
 name = "ragflow-toolkit"
-version = "0.1.0"
+version = "0.2.0"
 description = "零依赖 RAGFlow 运维工具箱：百万级批量导入、断点续传、连通性体检、已知 bug 修补"
 readme = "README.md"
 requires-python = ">=3.9"
@@ -16,6 +16,7 @@ classifiers = [
 
 [project.scripts]
 ragflow-toolkit = "ragflow_toolkit:main"
+ragflow-monitor = "ragflow_monitor:main"
 
 [tool.setuptools]
-py-modules = ["ragflow_toolkit"]
+py-modules = ["ragflow_toolkit", "ragflow_monitor"]

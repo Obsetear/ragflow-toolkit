@@ -20,6 +20,7 @@ RAGFlow 很好用，但在**真实的内网环境**里批量灌数据时会遇�
 | 现场机装不了 pip 包 | 纯标准库，拷过去就能跑 |
 | v0.27.2 保存切片方法报错 | `patch --fix task_page_size` 一键修 |
 | 解析卡住不知道查哪 | `health` 一键体检 Redis/ES/API |
+| 不知道系统健不健康、失败率多少 | `ragflow-monitor` 巡检报告 + 失败率告警 |
 
 ## 快速开始
 
@@ -48,6 +49,29 @@ python ragflow_toolkit.py upload ... --map map.txt --dataset 默认库
 ```
 
 > 也支持环境变量：`RAGFLOW_URL`、`RAGFLOW_API_KEY`。
+
+## 巡检 / 监控
+
+`ragflow-monitor` 是运维托管的核心工具：一键体检、出 Markdown 报告、失败率告警。零依赖。
+
+```bash
+# 一次性巡检（含磁盘）
+python ragflow_monitor.py check --base-url http://10.0.0.10:9380 --api-key KEY --disk-path /data
+
+# 持续监控：失败率超 5% 告警，推送到 webhook
+python ragflow_monitor.py watch --base-url ... --api-key KEY --interval 300     --max-fail-rate 0.05 --webhook https://your-hook
+
+# 机器可读（接你自己的告警系统）
+python ragflow_monitor.py check ... --json
+```
+
+输出示例：
+
+| 知识库 | 文档数 | 已完成 | 失败 | 解析中 | 失败率 |
+|---|---|---|---|---|---|
+| 裁判文书 | 571033 | 570900 | 133 | 0 | 0.0% |
+
+适合：运维托管、季度巡检报告、故障预警。
 
 ## 设计取舍
 
@@ -84,7 +108,8 @@ python ragflow_toolkit.py health ...
 ## 测试
 
 ```bash
-python tests/test_mock.py
+python tests/test_mock.py     # 批量导入
+python tests/test_monitor.py # 巡检/监控
 ```
 
 用一个 mock RAGFlow 服务器端到端验证上传、子目录、扩展名过滤、解析触发、断点续传，不需要真实 RAGFlow。
