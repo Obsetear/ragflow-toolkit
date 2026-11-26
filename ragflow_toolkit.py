@@ -41,6 +41,13 @@ STATE_DB = Path(os.environ.get("RAGFLOW_TOOLKIT_STATE", str(Path.home() / ".ragf
 DEFAULT_TIMEOUT = 60
 RETRIES = 3
 
+# Windows 控制台默认 GBK/cp1252，直接 print 中文会 UnicodeEncodeError；统一切 UTF-8
+for _stream in (sys.stdout, sys.stderr):
+    try:
+        _stream.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:  # noqa: BLE001
+        pass
+
 
 # --------------------------------------------------------------------------- #
 # HTTP 客户端：只依赖 urllib
