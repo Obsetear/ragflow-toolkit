@@ -5,6 +5,7 @@
 [![Python 3.9+](https://img.shields.io/badge/python-3.9%2B-blue)](https://www.python.org/)
 [![No dependencies](https://img.shields.io/badge/dependencies-none-brightgreen)]()
 [![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
+[![ci](https://github.com/Obsetear/ragflow-toolkit/actions/workflows/ci.yml/badge.svg)](https://github.com/Obsetear/ragflow-toolkit/actions/workflows/ci.yml)
 
 RAGFlow 很好用，但在**真实的内网环境**里批量灌数据时会遇到一堆坑：几十万文件传到一半断了、Windows 长路径报错、解析任务不入队、v0.27.2 保存切片方法必报错……这个工具箱把我们踩过的坑一次性解决。
 
